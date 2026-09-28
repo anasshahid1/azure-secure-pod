@@ -22,10 +22,11 @@ Azure DNS  ──►  Application Gateway  ──►  Bastion VM :8080 (Guacamol
 - Per-pod Resource Group, VNet, subnets (CC, workload, bastion, App Gateway, Private DNS, AC).
 - Application Gateway v2 with HTTPS listener + HTTP to HTTPS redirect.
 - Guacamole bastion VM (Ubuntu + Docker Guacamole). `user-mapping.xml` is SCP'd after apply.
-- Workload VMs (AlmaLinux by default).
+- Workload VMs (Ubuntu + xrdp/xfce4 for RDP and SSH).
 - Cloud Connector VMSS behind an internal Azure Load Balancer.
+- Azure Function App for Cloud Connector VMSS lifecycle and health monitoring.
 - Azure Private DNS Resolver for ZPA DNS redirection.
-- ZPA App Connector Group + Provisioning Key + AC VM.
+- ZPA App Connector Group + Provisioning Key + AC VM in a dedicated peered VNet.
 - Per-pod CNAME `pod-<suffix>.<lab_domain>` to the Application Gateway public IP.
 
 ## Prerequisites
@@ -81,7 +82,8 @@ terraform destroy
 
 ## Caveats / Follow-ups
 
-- **Guacamole image**: the bastion cloud-init installs the official `guacamole/guacamole` and `guacamole/guacd` Docker images. The `user-mapping.xml` is copied to `/etc/guacamole` and the container restarted. For production labs, bake a custom Packer image instead.
-- **ZPA App Connector VM**: the default image is Ubuntu. For a functional ZPA connector, replace `acvm_*` variables with a Zscaler-published AC image or provide `acvm_source_image_id`.
+- **Guacamole image**: the bastion cloud-init installs the official `guacamole/guacamole` and `guacamole/guacd` Docker images plus the `guacamole-auth-file` extension. The `user-mapping.xml` is copied to `/etc/guacamole` and the container restarted.
+- **ZPA App Connector VM**: uses the Zscaler Azure Marketplace image in a dedicated VNet peered to the CC/workload VNet. Set `accept_marketplace_agreement = true` only on the first deploy in a new subscription, or accept the terms beforehand with `az vm image terms accept --urn zscaler:zscaler-private-access:zpa-con-azure:latest`.
+- **Function App**: the Function App is deployed but `run_manual_sync` is disabled to avoid a local script dependency. After the first `apply`, open the Function App in the Azure Portal once to trigger the zip sync, or re-run with `run_manual_sync = true` if running from a local clone.
 - The upstream Zscaler Azure modules are pulled directly from GitHub `main`. Pin the `ref=` in `main.tf` to a specific commit/tag for reproducibility.
 - This is single-region. A 2-region variant would use aliased `azurerm` providers.
