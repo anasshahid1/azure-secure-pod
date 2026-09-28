@@ -233,34 +233,49 @@ variable "ac_count" {
   description = "Number of ZPA App Connector VMs to deploy."
 }
 
+variable "ac_admin_username" {
+  type        = string
+  default     = "zsroot"
+  description = "Admin username for the ZPA App Connector marketplace image."
+}
+
+variable "accept_marketplace_agreement" {
+  type        = bool
+  default     = false
+  description = "Set to true to accept the ZPA App Connector marketplace terms for a brand new subscription."
+}
+
 variable "acvm_instance_type" {
-  type    = string
-  default = "Standard_B2s"
+  type        = string
+  default     = "Standard_D4s_v5"
+  description = "App Connector VM size."
 }
 
 variable "acvm_image_publisher" {
   type    = string
-  default = "Canonical"
+  default = "zscaler"
 }
 
 variable "acvm_image_offer" {
   type    = string
-  default = "0001-com-ubuntu-server-jammy"
+  default = "zscaler-private-access"
 }
 
 variable "acvm_image_sku" {
   type    = string
-  default = "22_04-lts-gen2"
+  default = "zpa-con-azure"
 }
 
 variable "acvm_image_version" {
-  type    = string
-  default = "latest"
+  type        = string
+  default     = "2025.11.12"
+  description = "Pin to a known-good marketplace version, or use latest."
 }
 
 variable "acvm_source_image_id" {
-  type    = string
-  default = null
+  type        = string
+  default     = null
+  description = "Override the marketplace App Connector image with a custom image ID."
 }
 
 variable "domain_names" {

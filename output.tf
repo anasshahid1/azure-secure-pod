@@ -37,9 +37,9 @@ output "resource_group_name" {
   value       = module.network.resource_group_name
 }
 
-output "ac_public_ip" {
-  description = "ZPA App Connector public IP."
-  value       = length(azurerm_public_ip.ac_pip) > 0 ? azurerm_public_ip.ac_pip[0].ip_address : ""
+output "ac_private_ip" {
+  description = "ZPA App Connector private IP."
+  value       = length(azurerm_network_interface.ac_nic) > 0 ? azurerm_network_interface.ac_nic[0].private_ip_address : ""
 }
 
 output "portal_username" {

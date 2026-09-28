@@ -38,3 +38,4 @@ zpa_customer_id   = "..."
 # vmss_default_ccs = 2
 # zones_enabled = false
 # bastion_nsg_source_prefix = "*"
+# accept_marketplace_agreement = false

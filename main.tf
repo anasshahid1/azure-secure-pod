@@ -592,6 +592,23 @@ module "cc_vmss" {
   ]
 }
 
+module "cc_function_app" {
+  source                     = "github.com/zscaler/terraform-azurerm-cloud-connector-modules//modules/terraform-zscc-function-app-azure?ref=main"
+  name_prefix                = var.name_prefix
+  resource_tag               = local.resource_tag
+  global_tags                = local.global_tags
+  resource_group             = module.network.resource_group_name
+  location                   = var.arm_location
+  cc_vm_prov_url             = var.cc_vm_prov_url
+  azure_vault_url            = azurerm_key_vault.cc.vault_uri
+  vmss_names                 = module.cc_vmss.vmss_names
+  managed_identity_id        = module.cc_identity.function_app_managed_identity_id
+  managed_identity_client_id = module.cc_identity.function_app_managed_identity_client_id
+  upload_function_app_zip    = true
+  run_manual_sync            = false
+  path_to_scripts            = ""
+}
+
 ################################################################################
 # 6. ZPA Private DNS Resolver
 ################################################################################
@@ -615,7 +632,7 @@ resource "azurerm_private_dns_resolver_virtual_network_link" "dns_vnet_link" {
 }
 
 ################################################################################
-# 7. ZPA App Connector Group + Provisioning Key + AC VM
+# 7. ZPA App Connector Group + Provisioning Key + AC VM (separate VNet)
 ################################################################################
 resource "zpa_app_connector_group" "app_connector_group" {
   name                     = "${var.name_prefix}-ac-group-${local.resource_tag}"
@@ -644,13 +661,77 @@ data "zpa_enrollment_cert" "connector" {
   name = "Connector"
 }
 
+resource "azurerm_marketplace_agreement" "ac_image" {
+  count     = var.accept_marketplace_agreement ? 1 : 0
+  publisher = var.acvm_image_publisher
+  offer     = var.acvm_image_offer
+  plan      = var.acvm_image_sku
+}
+
+# Separate VNet for App Connector
+resource "azurerm_virtual_network" "ac_vnet" {
+  name                = "${var.name_prefix}-ac-vnet-${local.resource_tag}"
+  resource_group_name = module.network.resource_group_name
+  location            = var.arm_location
+  address_space       = ["10.2.0.0/16"]
+
+  tags = local.global_tags
+}
+
 resource "azurerm_subnet" "ac" {
   name                 = "${var.name_prefix}-ac-subnet-${local.resource_tag}"
   resource_group_name  = module.network.resource_group_name
-  virtual_network_name = local.vnet_name
-  address_prefixes     = [cidrsubnet(var.network_address_space, 8, 220)]
+  virtual_network_name = azurerm_virtual_network.ac_vnet.name
+  address_prefixes     = [cidrsubnet("10.2.0.0/16", 8, 1)]
+}
 
-  depends_on = [module.network]
+# Peer the AC VNet to the CC/Workload VNet
+resource "azurerm_virtual_network_peering" "cc_to_ac" {
+  name                      = "${var.name_prefix}-cc-to-ac-${local.resource_tag}"
+  resource_group_name       = module.network.resource_group_name
+  virtual_network_name      = local.vnet_name
+  remote_virtual_network_id = azurerm_virtual_network.ac_vnet.id
+
+  depends_on = [module.network, azurerm_virtual_network.ac_vnet]
+}
+
+resource "azurerm_virtual_network_peering" "ac_to_cc" {
+  name                      = "${var.name_prefix}-ac-to-cc-${local.resource_tag}"
+  resource_group_name       = module.network.resource_group_name
+  virtual_network_name      = azurerm_virtual_network.ac_vnet.name
+  remote_virtual_network_id = module.network.virtual_network_id
+
+  depends_on = [module.network, azurerm_virtual_network.ac_vnet]
+}
+
+# NAT Gateway for AC outbound internet access
+resource "azurerm_public_ip" "ac_nat_pip" {
+  name                = "${var.name_prefix}-ac-nat-pip-${local.resource_tag}"
+  resource_group_name = module.network.resource_group_name
+  location            = var.arm_location
+  allocation_method   = "Static"
+  sku                 = "Standard"
+
+  tags = local.global_tags
+}
+
+resource "azurerm_nat_gateway" "ac_nat" {
+  name                = "${var.name_prefix}-ac-nat-${local.resource_tag}"
+  resource_group_name = module.network.resource_group_name
+  location            = var.arm_location
+  sku_name            = "Standard"
+
+  tags = local.global_tags
+}
+
+resource "azurerm_nat_gateway_public_ip_association" "ac_nat_pip" {
+  nat_gateway_id       = azurerm_nat_gateway.ac_nat.id
+  public_ip_address_id = azurerm_public_ip.ac_nat_pip.id
+}
+
+resource "azurerm_subnet_nat_gateway_association" "ac_nat_subnet" {
+  subnet_id      = azurerm_subnet.ac.id
+  nat_gateway_id = azurerm_nat_gateway.ac_nat.id
 }
 
 resource "azurerm_network_security_group" "ac_nsg" {
@@ -659,19 +740,19 @@ resource "azurerm_network_security_group" "ac_nsg" {
   resource_group_name = module.network.resource_group_name
 
   security_rule {
-    name                       = "SSH"
+    name                       = "SSH_VNET"
     priority                   = 4000
     direction                  = "Inbound"
     access                     = "Allow"
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = "22"
-    source_address_prefix      = var.bastion_nsg_source_prefix
+    source_address_prefix      = "VirtualNetwork"
     destination_address_prefix = "*"
   }
 
   security_rule {
-    name                       = "Outbound"
+    name                       = "OUTBOUND"
     priority                   = 4000
     direction                  = "Outbound"
     access                     = "Allow"
@@ -681,17 +762,6 @@ resource "azurerm_network_security_group" "ac_nsg" {
     source_address_prefix      = "*"
     destination_address_prefix = "*"
   }
-
-  tags = local.global_tags
-}
-
-resource "azurerm_public_ip" "ac_pip" {
-  count               = var.ac_count
-  name                = "${var.name_prefix}-ac-pip-${count.index + 1}-${local.resource_tag}"
-  resource_group_name = module.network.resource_group_name
-  location            = var.arm_location
-  allocation_method   = "Static"
-  sku                 = "Standard"
 
   tags = local.global_tags
 }
@@ -706,7 +776,6 @@ resource "azurerm_network_interface" "ac_nic" {
     name                          = "ac-ip-config"
     subnet_id                     = azurerm_subnet.ac.id
     private_ip_address_allocation = "Dynamic"
-    public_ip_address_id          = azurerm_public_ip.ac_pip[count.index].id
   }
 
   tags = local.global_tags
@@ -725,11 +794,16 @@ resource "azurerm_linux_virtual_machine" "ac" {
   resource_group_name   = module.network.resource_group_name
   network_interface_ids = [azurerm_network_interface.ac_nic[count.index].id]
   size                  = var.acvm_instance_type
-  admin_username        = var.bastion_admin_username
+  admin_username        = var.ac_admin_username
+
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [module.cc_identity.managed_identity_id]
+  }
 
   admin_ssh_key {
-    username   = var.bastion_admin_username
-    public_key = "${trimspace(tls_private_key.key.public_key_openssh)} ${var.bastion_admin_username}@me.io"
+    username   = var.ac_admin_username
+    public_key = "${trimspace(tls_private_key.key.public_key_openssh)} ${var.ac_admin_username}@me.io"
   }
 
   os_disk {
@@ -737,26 +811,25 @@ resource "azurerm_linux_virtual_machine" "ac" {
     storage_account_type = "Premium_LRS"
   }
 
-  dynamic "source_image_reference" {
-    for_each = var.acvm_source_image_id == null ? [1] : []
-    content {
-      publisher = var.acvm_image_publisher
-      offer     = var.acvm_image_offer
-      sku       = var.acvm_image_sku
-      version   = var.acvm_image_version
-    }
+  source_image_reference {
+    publisher = var.acvm_image_publisher
+    offer     = var.acvm_image_offer
+    sku       = var.acvm_image_sku
+    version   = var.acvm_image_version
   }
 
-  source_image_id = var.acvm_source_image_id
+  plan {
+    publisher = var.acvm_image_publisher
+    name      = var.acvm_image_sku
+    product   = var.acvm_image_offer
+  }
 
   custom_data = base64encode(<<-ACDATA
 #!/bin/bash
-# Stop the App Connector service if it is already running
 systemctl stop zpa-connector 2>/dev/null || true
-# Write the provisioning key created in the ZPA Admin Portal
 echo "${zpa_provisioning_key.app_connector_provisioning_key.provisioning_key}" > /opt/zscaler/var/provision_key
-# Start the App Connector service
-systemctl start zpa-connector 2>/dev/null || true
+chmod 644 /opt/zscaler/var/provision_key
+systemctl start zpa-connector
 ACDATA
   )
 
@@ -764,7 +837,8 @@ ACDATA
 
   depends_on = [
     azurerm_network_interface.ac_nic,
-    azurerm_network_interface_security_group_association.ac_nic_nsg
+    azurerm_network_interface_security_group_association.ac_nic_nsg,
+    azurerm_marketplace_agreement.ac_image
   ]
 }
 
@@ -816,7 +890,7 @@ encoding="md5">
   <protocol>ssh</protocol>
   <param name="hostname">${azurerm_network_interface.ac_nic[0].private_ip_address}</param>
   <param name="port">22</param>
-  <param name="username">${var.bastion_admin_username}</param>
+  <param name="username">${var.ac_admin_username}</param>
   <param name="private-key">${tls_private_key.key.private_key_pem}</param>
 </connection>
 </authorize>
