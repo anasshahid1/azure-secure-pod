@@ -1,0 +1,13 @@
+terraform.tfvars
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+*.pem
+*.p8
+user-mapping.xml
+bastion-info*.txt
+testbed.txt
+user_data
+cc_user_data.txt
+ac_user_data.txt

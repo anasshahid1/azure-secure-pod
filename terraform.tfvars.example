@@ -1,0 +1,40 @@
+# ============================================================================
+# azure-secure-pod — copy this file to terraform.tfvars and fill in.
+# Never commit terraform.tfvars (contains secrets).
+# ============================================================================
+
+# ---- Azure context ----
+env_subscription_id = "00000000-0000-0000-0000-000000000000"
+arm_location        = "westus2"
+
+# ---- Pod identity ----
+name_suffix = "pod1"
+
+# ---- Bootstrap outputs (from bootstrap stack) ----
+lab_domain                   = "ztcloudlab.com"
+dns_zone_resource_group_name = "zscc-bootstrap-xxxxxxxx"
+wildcard_cert_secret_id      = "https://<vault>.vault.azure.net/secrets/wildcard-.../..."
+
+# ---- Cloud Connector credentials (from CC portal) ----
+cc_vm_prov_url  = "connector.zscloud.net/api/v1/provUrl?name=..."
+secret_username = "your_cc_user@example.com"
+secret_password = "your_cc_password"
+secret_apikey   = "your_partner_api_key"
+
+# ---- Pre-created User Assigned Managed Identity for Cloud Connector ----
+# The identity must have Network Contributor on the resource group and
+# Get/List permissions on the Key Vault that stores CC credentials.
+cc_vm_managed_identity_name = "zscc-cc-mi"
+cc_vm_managed_identity_rg   = "zscc-mi-rg"
+
+# ---- ZPA API (from ZPA admin -> Administration -> API Key) ----
+zpa_client_id     = "..."
+zpa_client_secret = "..."
+zpa_customer_id   = "..."
+
+# ---- Optional: override defaults ----
+# workload_count = 2
+# ccvm_instance_type = "Standard_D2ds_v5"
+# vmss_default_ccs = 2
+# zones_enabled = false
+# bastion_nsg_source_prefix = "*"
