@@ -205,7 +205,7 @@ variable "bastion_admin_username" {
 
 variable "workload_admin_username" {
   type    = string
-  default = "ubuntu"
+  default = "cloudconnector"
 }
 
 variable "workload_count" {

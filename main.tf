@@ -39,17 +39,26 @@ USERDATA
 package_update: true
 packages:
   - docker.io
+  - curl
+  - tar
 runcmd:
   - systemctl enable docker
   - systemctl start docker
   - docker network create guacnetwork || true
-  - docker run -d --restart always --name guacd --network guacnetwork guacamole/guacd:latest
   - mkdir -p /etc/guacamole/extensions
+  - |
+    curl -fsSL https://archive.apache.org/dist/guacamole/1.5.5/binary/guacamole-auth-file-1.5.5.tar.gz \
+      -o /tmp/guacamole-auth-file.tar.gz && \
+    tar -xzf /tmp/guacamole-auth-file.tar.gz -C /tmp && \
+    find /tmp -name 'guacamole-auth-file-*.jar' -exec mv {} /etc/guacamole/extensions/ \; && \
+    rm -rf /tmp/guacamole-auth-file.tar.gz /tmp/guacamole-auth-file-1.5.5
+  - docker run -d --restart always --name guacd --network guacnetwork guacamole/guacd:latest
   - |
     docker run -d --restart always --name guacamole \
       --network guacnetwork \
       -p 8080:8080 \
-      -v /etc/guacamole:/root/.guacamole \
+      -v /etc/guacamole:/etc/guacamole \
+      -e GUACAMOLE_HOME=/etc/guacamole \
       -e GUACD_HOSTNAME=guacd \
       -e GUACD_PORT=4822 \
       guacamole/guacamole:latest
@@ -332,20 +341,133 @@ resource "azurerm_linux_virtual_machine" "bastion" {
 }
 
 ################################################################################
-# 4. Workload VMs
+# 4. Workload VMs (Ubuntu + XRDP for RDP + SSH)
 ################################################################################
-module "workload" {
-  source                = "github.com/zscaler/terraform-azurerm-cloud-connector-modules//modules/terraform-zscc-workload-azure?ref=main"
-  workload_count        = var.workload_count
-  location              = var.arm_location
-  name_prefix           = var.name_prefix
-  resource_tag          = local.resource_tag
-  global_tags           = local.global_tags
-  resource_group        = module.network.resource_group_name
-  subnet_id             = module.network.workload_subnet_ids[0]
-  ssh_key               = tls_private_key.key.public_key_openssh
-  server_admin_username = var.workload_admin_username
-  dns_servers           = []
+resource "azurerm_network_security_group" "workload_nsg" {
+  name                = "${var.name_prefix}-workload-nsg-${local.resource_tag}"
+  location            = var.arm_location
+  resource_group_name = module.network.resource_group_name
+
+  security_rule {
+    name                       = "SSH_VNET"
+    priority                   = 4000
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "22"
+    source_address_prefix      = "VirtualNetwork"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "RDP_VNET"
+    priority                   = 4001
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "3389"
+    source_address_prefix      = "VirtualNetwork"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "ICMP_VNET"
+    priority                   = 4002
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Icmp"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "VirtualNetwork"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "OUTBOUND"
+    priority                   = 4000
+    direction                  = "Outbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  tags = local.global_tags
+}
+
+resource "azurerm_network_interface" "workload_nic" {
+  count               = var.workload_count
+  name                = "${var.name_prefix}-workload-nic-${count.index + 1}-${local.resource_tag}"
+  location            = var.arm_location
+  resource_group_name = module.network.resource_group_name
+
+  ip_configuration {
+    name                          = "workload-ip-config"
+    subnet_id                     = module.network.workload_subnet_ids[0]
+    private_ip_address_allocation = "Dynamic"
+  }
+
+  tags = local.global_tags
+}
+
+resource "azurerm_network_interface_security_group_association" "workload_nic_nsg" {
+  count                     = var.workload_count
+  network_interface_id      = azurerm_network_interface.workload_nic[count.index].id
+  network_security_group_id = azurerm_network_security_group.workload_nsg.id
+}
+
+resource "azurerm_linux_virtual_machine" "workload" {
+  count               = var.workload_count
+  name                = "${var.name_prefix}-workload-vm-${count.index + 1}-${local.resource_tag}"
+  location            = var.arm_location
+  resource_group_name = module.network.resource_group_name
+
+  network_interface_ids = [azurerm_network_interface.workload_nic[count.index].id]
+  size                  = "Standard_B2s"
+  admin_username        = var.workload_admin_username
+  computer_name         = "${var.name_prefix}-workload-${count.index + 1}-${local.resource_tag}"
+
+  admin_ssh_key {
+    username   = var.workload_admin_username
+    public_key = "${trimspace(tls_private_key.key.public_key_openssh)} ${var.workload_admin_username}@me.io"
+  }
+
+  os_disk {
+    caching              = "ReadWrite"
+    storage_account_type = "Premium_LRS"
+  }
+
+  source_image_reference {
+    publisher = "Canonical"
+    offer     = "0001-com-ubuntu-server-jammy"
+    sku       = "22_04-lts-gen2"
+    version   = "latest"
+  }
+
+  custom_data = base64encode(<<-WCI
+#cloud-config
+package_update: true
+packages:
+  - xrdp
+  - xfce4
+  - xfce4-goodies
+runcmd:
+  - echo '${var.workload_admin_username}:CloudConnector2022!' | chpasswd
+  - systemctl enable xrdp
+  - systemctl start xrdp
+WCI
+  )
+
+  tags = local.global_tags
+
+  depends_on = [
+    azurerm_network_interface.workload_nic,
+    azurerm_network_interface_security_group_association.workload_nic_nsg
+  ]
 }
 
 ################################################################################
@@ -658,16 +780,34 @@ password="8b4feec7f41e1c157701fc950372a8a2"
 encoding="md5">
 
 <!-- ===== Azure Workloads ===== -->
+<connection name="Azure Workload 1 (RDP)">
+  <protocol>rdp</protocol>
+  <param name="hostname">${azurerm_linux_virtual_machine.workload[0].private_ip_address}</param>
+  <param name="port">3389</param>
+  <param name="username">${var.workload_admin_username}</param>
+  <param name="password">CloudConnector2022!</param>
+  <param name="ignore-cert">true</param>
+  <param name="security">rdp</param>
+</connection>
 <connection name="Azure Workload 1 (SSH)">
   <protocol>ssh</protocol>
-  <param name="hostname">${module.workload.private_ip[0]}</param>
+  <param name="hostname">${azurerm_linux_virtual_machine.workload[0].private_ip_address}</param>
   <param name="port">22</param>
   <param name="username">${var.workload_admin_username}</param>
   <param name="private-key">${tls_private_key.key.private_key_pem}</param>
 </connection>
+<connection name="Azure Workload 2 (RDP)">
+  <protocol>rdp</protocol>
+  <param name="hostname">${azurerm_linux_virtual_machine.workload[1].private_ip_address}</param>
+  <param name="port">3389</param>
+  <param name="username">${var.workload_admin_username}</param>
+  <param name="password">CloudConnector2022!</param>
+  <param name="ignore-cert">true</param>
+  <param name="security">rdp</param>
+</connection>
 <connection name="Azure Workload 2 (SSH)">
   <protocol>ssh</protocol>
-  <param name="hostname">${module.workload.private_ip[1]}</param>
+  <param name="hostname">${azurerm_linux_virtual_machine.workload[1].private_ip_address}</param>
   <param name="port">22</param>
   <param name="username">${var.workload_admin_username}</param>
   <param name="private-key">${tls_private_key.key.private_key_pem}</param>

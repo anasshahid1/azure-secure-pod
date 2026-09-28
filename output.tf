@@ -20,7 +20,7 @@ output "bastion_username" {
 
 output "workload_private_ips" {
   description = "Workload VM private IPs."
-  value       = module.workload.private_ip
+  value       = azurerm_linux_virtual_machine.workload[*].private_ip_address
 }
 
 output "workload_admin_username" {
