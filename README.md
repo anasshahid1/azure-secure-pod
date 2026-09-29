@@ -43,6 +43,47 @@ Azure DNS ──► Application Gateway ──► Bastion VM :8080 (Guacamole)
                                         guacd ──► Workload VMs (RDP/SSH)
 ```
 
+### Full stack topology (default mode)
+
+```
+                              Internet
+                                 │
+                                 ▼
+              ┌────────────────────────────────────┐
+              │   Public IP  +  NAT Gateway        │
+              │   (Bastion / CC outbound)          │
+              └────────────────────────────────────┘
+                                 │
+         ┌───────────────────────┴───────────────────────┐
+         │                                               │
+         ▼                                               ▼
+  Bastion Subnet                                  CC Subnets (zones)
+  ┌──────────────────────┐                       ┌──────────────────────┐
+  │ Bastion VM           │                       │ CC VMSS instances    │
+  │ - Docker Guacamole   │                       │ - mgmt NIC           │
+  │ - guacd              │                       │ - service NIC        │
+  │ - user-mapping.xml   │                       │ - IP forwarding      │
+  └──────────────────────┘                       └──────────────────────┘
+         │                                               │
+         │                                               ▼
+         │                                   CC Internal Load Balancer
+         │                                           10.1.200.4
+         │                                               │
+         │           ┌─────────────────┬─────────────────┤
+         │           │                 │                 │
+         ▼           ▼                 ▼                 ▼
+  Workload VMs   Workload VMs     App Connector      Private DNS Resolver
+  (RDP / SSH)    (RDP / SSH)      (peer VNet)        (zpa. forwarding)
+         │                                               │
+         │                                               ▼
+         └──────────────────────────────────────►  Zscaler ZPA / ZIA Cloud
+```
+
+- **Workload subnet** route table sends default traffic to the CC Load Balancer so workloads are inspected by Zscaler.
+- **CC subnet** uses the NAT Gateway for outbound Internet to reach Zscaler cloud services and Azure Key Vault.
+- **App Connector VNet** is peered to the main CC/workload VNet and registers to the ZPA App Connector Group.
+- **Private DNS Resolver** forwards `zpa.` queries to the configured ZPA DNS targets.
+
 Set `deploy_public_endpoint = true` to enable the Application Gateway + DNS path. This requires the one-time `bootstrap/` outputs.
 
 ---
