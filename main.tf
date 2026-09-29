@@ -314,7 +314,7 @@ resource "azurerm_linux_virtual_machine" "bastion" {
   location              = var.arm_location
   resource_group_name   = module.network.resource_group_name
   network_interface_ids = [azurerm_network_interface.bastion_nic.id]
-  size                  = "Standard_B2s"
+  size                  = var.bastion_instance_type
   admin_username        = var.bastion_admin_username
   computer_name         = "${var.name_prefix}-bastion-${local.resource_tag}"
 
@@ -432,7 +432,7 @@ resource "azurerm_linux_virtual_machine" "workload" {
   resource_group_name = module.network.resource_group_name
 
   network_interface_ids = [azurerm_network_interface.workload_nic[count.index].id]
-  size                  = "Standard_B2s"
+  size                  = var.workload_instance_type
   admin_username        = var.workload_admin_username
   computer_name         = "${var.name_prefix}-workload-${count.index + 1}-${local.resource_tag}"
 

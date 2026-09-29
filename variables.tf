@@ -239,6 +239,18 @@ variable "workload_count" {
   description = "Number of workload VMs to create."
 }
 
+variable "workload_instance_type" {
+  type        = string
+  default     = "Standard_D2s_v3"
+  description = "VM size for workload demo hosts."
+}
+
+variable "bastion_instance_type" {
+  type        = string
+  default     = "Standard_D2s_v3"
+  description = "VM size for Guacamole bastion."
+}
+
 # ---- ZPA ----
 variable "zpa_client_id" {
   type = string
