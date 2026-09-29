@@ -317,8 +317,10 @@ variable "acvm_source_image_id" {
 
 variable "domain_names" {
   type        = map(any)
-  description = "Private DNS resolver domain forwarding rules for ZPA."
-  default     = {}
+  description = "Private DNS resolver domain forwarding rules for ZPA. Use a trailing dot (e.g. zpa. or . for wildcard)."
+  default = {
+    zpa = "zpa."
+  }
 }
 
 variable "target_address" {
