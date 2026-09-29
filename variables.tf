@@ -306,9 +306,7 @@ variable "acvm_source_image_id" {
 variable "domain_names" {
   type        = map(any)
   description = "Private DNS resolver domain forwarding rules for ZPA."
-  default = {
-    "zpa" = "*.zpa"
-  }
+  default     = {}
 }
 
 variable "target_address" {
