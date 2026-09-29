@@ -29,7 +29,7 @@ locals {
 
   cc_userdata = <<USERDATA
 [ZSCALER]
-CC_URL=${var.cc_vm_prov_url}
+CC_URL=${startswith(var.cc_vm_prov_url, "http") ? var.cc_vm_prov_url : "https://${var.cc_vm_prov_url}"}
 AZURE_VAULT_URL=${local.cc_vault_url}
 HTTP_PROBE_PORT=${var.http_probe_port}
 AZURE_MANAGED_IDENTITY_CLIENT_ID=${module.cc_identity.managed_identity_client_id}
