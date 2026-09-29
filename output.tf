@@ -1,6 +1,6 @@
 output "lab_url" {
-  description = "Public HTTPS endpoint for the pod."
-  value       = "https://${local.bastion_hostname}/"
+  description = "Public endpoint for Guacamole. HTTPS when deploy_public_endpoint is true, otherwise direct HTTP on bastion public IP."
+  value       = var.deploy_public_endpoint ? "https://${local.bastion_hostname}/" : "http://${azurerm_public_ip.bastion_pip.ip_address}:8080/guacamole/"
 }
 
 output "bastion_public_ip" {

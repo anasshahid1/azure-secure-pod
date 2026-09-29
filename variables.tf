@@ -22,7 +22,26 @@ variable "name_prefix" {
 
 variable "name_suffix" {
   type        = string
-  description = "Unique per pod. Keep lowercase and short (used in public hostname)."
+  description = "Unique per pod. Keep lowercase and short."
+  default     = "as"
+}
+
+variable "cc_azure_vault_url" {
+  type        = string
+  default     = ""
+  description = "Optional existing Key Vault URL for Cloud Connector credentials. If empty, a per-pod Key Vault is created."
+}
+
+variable "deploy_public_endpoint" {
+  type        = bool
+  default     = false
+  description = "If true, deploy Application Gateway, wildcard cert, and DNS CNAME. Requires lab_domain and wildcard_cert_secret_id."
+}
+
+variable "zpa_cloud" {
+  type        = string
+  default     = "PRODUCTION"
+  description = "ZPA cloud. Supported: PRODUCTION, ZPATWO, BETA, GOV, GOVUS, PREVIEW, DEV, QA, QA2, or a https:// base URL."
 }
 
 variable "network_address_space" {
@@ -65,19 +84,22 @@ variable "owner_tag" {
   default = "zscc-admin"
 }
 
-# ---- DNS / TLS bootstrap outputs ----
+# ---- DNS / TLS bootstrap outputs (only needed if deploy_public_endpoint=true) ----
 variable "lab_domain" {
   type        = string
+  default     = ""
   description = "Apex lab domain from bootstrap outputs."
 }
 
 variable "dns_zone_resource_group_name" {
   type        = string
+  default     = ""
   description = "Resource group containing the Azure DNS zone (from bootstrap outputs)."
 }
 
 variable "wildcard_cert_secret_id" {
   type        = string
+  default     = ""
   description = "Key Vault secret ID of the wildcard PFX (from bootstrap outputs)."
 }
 
@@ -88,15 +110,18 @@ variable "cc_vm_prov_url" {
 }
 
 variable "secret_username" {
-  type = string
+  type    = string
+  default = ""
 }
 
 variable "secret_password" {
-  type = string
+  type    = string
+  default = ""
 }
 
 variable "secret_apikey" {
-  type = string
+  type    = string
+  default = ""
 }
 
 variable "cc_vm_managed_identity_name" {

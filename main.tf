@@ -8,7 +8,7 @@ provider "zpa" {
   zpa_client_id     = var.zpa_client_id
   zpa_client_secret = var.zpa_client_secret
   zpa_customer_id   = var.zpa_customer_id
-  zpa_cloud         = "PRODUCTION"
+  zpa_cloud         = var.zpa_cloud
 }
 
 data "azurerm_client_config" "current" {}
@@ -25,10 +25,12 @@ locals {
   vnet_name        = "${var.name_prefix}-vnet-${local.resource_tag}"
   bastion_hostname = "pod-${local.resource_tag}.${var.lab_domain}"
 
+  cc_vault_url = var.cc_azure_vault_url != "" ? var.cc_azure_vault_url : azurerm_key_vault.cc[0].vault_uri
+
   cc_userdata = <<USERDATA
 [ZSCALER]
 CC_URL=${var.cc_vm_prov_url}
-AZURE_VAULT_URL=${azurerm_key_vault.cc.vault_uri}
+AZURE_VAULT_URL=${local.cc_vault_url}
 HTTP_PROBE_PORT=${var.http_probe_port}
 AZURE_MANAGED_IDENTITY_CLIENT_ID=${module.cc_identity.managed_identity_client_id}
 FIPS_ENABLED=${var.fips_enabled}
@@ -105,6 +107,7 @@ module "network" {
 # 2. Application Gateway subnet, public IP, and Application Gateway
 ################################################################################
 resource "azurerm_subnet" "appgw" {
+  count                = var.deploy_public_endpoint ? 1 : 0
   name                 = "${var.name_prefix}-appgw-subnet-${local.resource_tag}"
   resource_group_name  = module.network.resource_group_name
   virtual_network_name = local.vnet_name
@@ -114,6 +117,7 @@ resource "azurerm_subnet" "appgw" {
 }
 
 resource "azurerm_public_ip" "appgw_pip" {
+  count               = var.deploy_public_endpoint ? 1 : 0
   name                = "${var.name_prefix}-appgw-pip-${local.resource_tag}"
   resource_group_name = module.network.resource_group_name
   location            = var.arm_location
@@ -125,6 +129,7 @@ resource "azurerm_public_ip" "appgw_pip" {
 }
 
 resource "azurerm_application_gateway" "bastion" {
+  count               = var.deploy_public_endpoint ? 1 : 0
   name                = "${var.name_prefix}-appgw-${local.resource_tag}"
   resource_group_name = module.network.resource_group_name
   location            = var.arm_location
@@ -141,7 +146,7 @@ resource "azurerm_application_gateway" "bastion" {
 
   gateway_ip_configuration {
     name      = "appgw-ip-config"
-    subnet_id = azurerm_subnet.appgw.id
+    subnet_id = azurerm_subnet.appgw[0].id
   }
 
   frontend_port {
@@ -156,7 +161,7 @@ resource "azurerm_application_gateway" "bastion" {
 
   frontend_ip_configuration {
     name                 = "appgw-public-ip"
-    public_ip_address_id = azurerm_public_ip.appgw_pip.id
+    public_ip_address_id = azurerm_public_ip.appgw_pip[0].id
   }
 
   ssl_certificate {
@@ -267,7 +272,7 @@ resource "azurerm_network_security_group" "bastion_nsg" {
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = "8080"
-    source_address_prefix      = azurerm_subnet.appgw.address_prefixes[0]
+    source_address_prefix      = var.deploy_public_endpoint ? azurerm_subnet.appgw[0].address_prefixes[0] : var.bastion_nsg_source_prefix
     destination_address_prefix = "*"
   }
 
@@ -510,6 +515,7 @@ module "cc_identity" {
 
 # Per-pod Key Vault for Cloud Connector credentials
 resource "azurerm_key_vault" "cc" {
+  count                      = var.cc_azure_vault_url == "" ? 1 : 0
   name                       = "${var.name_prefix}cc${local.resource_tag}"
   location                   = var.arm_location
   resource_group_name        = module.network.resource_group_name
@@ -522,7 +528,8 @@ resource "azurerm_key_vault" "cc" {
 }
 
 resource "azurerm_key_vault_access_policy" "cc_managed_identity" {
-  key_vault_id = azurerm_key_vault.cc.id
+  count        = var.cc_azure_vault_url == "" ? 1 : 0
+  key_vault_id = azurerm_key_vault.cc[0].id
   tenant_id    = data.azurerm_client_config.current.tenant_id
   object_id    = module.cc_identity.managed_identity_principal_id
 
@@ -530,21 +537,24 @@ resource "azurerm_key_vault_access_policy" "cc_managed_identity" {
 }
 
 resource "azurerm_key_vault_secret" "cc_username" {
+  count        = var.cc_azure_vault_url == "" ? 1 : 0
   name         = "username"
   value        = var.secret_username
-  key_vault_id = azurerm_key_vault.cc.id
+  key_vault_id = azurerm_key_vault.cc[0].id
 }
 
 resource "azurerm_key_vault_secret" "cc_password" {
+  count        = var.cc_azure_vault_url == "" ? 1 : 0
   name         = "password"
   value        = var.secret_password
-  key_vault_id = azurerm_key_vault.cc.id
+  key_vault_id = azurerm_key_vault.cc[0].id
 }
 
 resource "azurerm_key_vault_secret" "cc_apikey" {
+  count        = var.cc_azure_vault_url == "" ? 1 : 0
   name         = "api-key"
   value        = var.secret_apikey
-  key_vault_id = azurerm_key_vault.cc.id
+  key_vault_id = azurerm_key_vault.cc[0].id
 }
 
 resource "local_file" "cc_user_data" {
@@ -600,7 +610,7 @@ module "cc_function_app" {
   resource_group             = module.network.resource_group_name
   location                   = var.arm_location
   cc_vm_prov_url             = var.cc_vm_prov_url
-  azure_vault_url            = azurerm_key_vault.cc.vault_uri
+  azure_vault_url            = local.cc_vault_url
   vmss_names                 = module.cc_vmss.vmss_names
   managed_identity_id        = module.cc_identity.function_app_managed_identity_id
   managed_identity_client_id = module.cc_identity.function_app_managed_identity_client_id
@@ -954,11 +964,12 @@ resource "null_resource" "user-mapping-move" {
 # 9. Per-pod DNS CNAME to Application Gateway
 ################################################################################
 resource "azurerm_dns_cname_record" "bastion" {
+  count               = var.deploy_public_endpoint ? 1 : 0
   name                = "pod-${local.resource_tag}"
   zone_name           = var.lab_domain
   resource_group_name = var.dns_zone_resource_group_name
   ttl                 = 300
-  record              = azurerm_public_ip.appgw_pip.fqdn
+  record              = azurerm_public_ip.appgw_pip[0].fqdn
 
   tags = local.global_tags
 }
