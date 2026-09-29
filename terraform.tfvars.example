@@ -10,6 +10,10 @@ arm_location        = "westus2"
 # ---- Pod identity ----
 name_suffix = "pod1"
 
+# ---- Lab credentials (change these!) ----
+workload_admin_password  = "ChangeMe2024!"
+guacamole_admin_password = "ChangeMe2024!"
+
 # ---- Bootstrap outputs (from bootstrap stack) ----
 lab_domain                   = "ztcloudlab.com"
 dns_zone_resource_group_name = "zscc-bootstrap-xxxxxxxx"

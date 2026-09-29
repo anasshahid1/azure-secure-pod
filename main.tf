@@ -467,7 +467,7 @@ packages:
   - xfce4
   - xfce4-goodies
 runcmd:
-  - echo '${var.workload_admin_username}:CloudConnector2022!' | chpasswd
+  - echo '${var.workload_admin_username}:${var.workload_admin_password}' | chpasswd
   - systemctl enable xrdp
   - systemctl start xrdp
 WCI
@@ -866,7 +866,7 @@ locals {
 <user-mapping>
 <authorize
 username="cloudconnector"
-password="8b4feec7f41e1c157701fc950372a8a2"
+password="${md5(var.guacamole_admin_password)}"
 encoding="md5">
 
 <!-- ===== Azure Workloads ===== -->
@@ -875,7 +875,7 @@ encoding="md5">
   <param name="hostname">${azurerm_linux_virtual_machine.workload[0].private_ip_address}</param>
   <param name="port">3389</param>
   <param name="username">${var.workload_admin_username}</param>
-  <param name="password">CloudConnector2022!</param>
+  <param name="password">${var.workload_admin_password}</param>
   <param name="ignore-cert">true</param>
   <param name="security">rdp</param>
 </connection>
@@ -891,7 +891,7 @@ encoding="md5">
   <param name="hostname">${azurerm_linux_virtual_machine.workload[1].private_ip_address}</param>
   <param name="port">3389</param>
   <param name="username">${var.workload_admin_username}</param>
-  <param name="password">CloudConnector2022!</param>
+  <param name="password">${var.workload_admin_password}</param>
   <param name="ignore-cert">true</param>
   <param name="security">rdp</param>
 </connection>

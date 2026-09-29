@@ -119,6 +119,10 @@ env_subscription_id = "00000000-0000-0000-0000-000000000000"
 arm_location        = "eastus2"
 name_suffix         = "pod1"
 
+# Lab credentials -- change these!
+workload_admin_password  = "ChangeMe2024!"
+guacamole_admin_password = "ChangeMe2024!"
+
 lab_domain                   = "ztcloudlab.com"
 dns_zone_resource_group_name = "zscc-bootstrap-..."
 wildcard_cert_secret_id      = "https://<vault>.vault.azure.net/secrets/wildcard-.../..."
@@ -169,7 +173,7 @@ lab_url = "https://pod-pod1.ztcloudlab.com/"
 ### Guacamole
 
 - **URL**: from `lab_url` output.
-- **Guacamole login**: `cloudconnector` / `CloudConnector2022!`
+- **Guacamole login**: `cloudconnector` / `<guacamole_admin_password>` from `terraform.tfvars`
 - The `user-mapping.xml` exposes:
   - Workload 1 / Workload 2 (RDP and SSH)
   - ZPA App Connector (SSH)
@@ -177,7 +181,7 @@ lab_url = "https://pod-pod1.ztcloudlab.com/"
 ### Workload access
 
 - **RDP username**: `cloudconnector`
-- **RDP password**: `CloudConnector2022!`
+- **RDP password**: `<workload_admin_password>` from `terraform.tfvars`
 - **SSH username**: `cloudconnector` (keypair is written locally; keep it secure)
 
 ### Bastion SSH

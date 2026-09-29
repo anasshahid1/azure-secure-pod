@@ -233,6 +233,16 @@ variable "workload_admin_username" {
   default = "cloudconnector"
 }
 
+variable "workload_admin_password" {
+  type        = string
+  description = "Password for the workload VM admin user (used for RDP/SSH)."
+}
+
+variable "guacamole_admin_password" {
+  type        = string
+  description = "Password for the Guacamole web login. Stored as an MD5 hash in user-mapping.xml."
+}
+
 variable "workload_count" {
   type        = number
   default     = 2
