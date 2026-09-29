@@ -43,6 +43,12 @@ packages:
   - docker.io
   - curl
   - tar
+write_files:
+  - path: /etc/guacamole/user-mapping.xml
+    permissions: '0644'
+    owner: root:root
+    encoding: b64
+    content: ${base64encode(local.usermapping)}
 runcmd:
   - systemctl enable docker
   - systemctl start docker
@@ -912,53 +918,6 @@ ${azurerm_public_ip.bastion_pip.ip_address}/32
 BC
 }
 
-resource "local_file" "usermapping" {
-  content  = local.usermapping
-  filename = "user-mapping.xml"
-}
-
-resource "local_file" "bastionconfig" {
-  content  = local.bastion_ssh_info
-  filename = "bastion-info.txt"
-}
-
-resource "null_resource" "user-mapping" {
-  provisioner "file" {
-    source      = "user-mapping.xml"
-    destination = "/home/${var.bastion_admin_username}/user-mapping.xml"
-  }
-
-  connection {
-    type        = "ssh"
-    host        = azurerm_public_ip.bastion_pip.ip_address
-    user        = var.bastion_admin_username
-    private_key = tls_private_key.key.private_key_pem
-  }
-
-  depends_on = [
-    local_file.usermapping,
-    azurerm_linux_virtual_machine.bastion
-  ]
-}
-
-resource "null_resource" "user-mapping-move" {
-  provisioner "remote-exec" {
-    inline = [
-      "sudo cp /home/${var.bastion_admin_username}/user-mapping.xml /etc/guacamole/user-mapping.xml",
-      "sudo chmod 644 /etc/guacamole/user-mapping.xml",
-      "sudo docker restart guacamole || true"
-    ]
-  }
-
-  connection {
-    type        = "ssh"
-    host        = azurerm_public_ip.bastion_pip.ip_address
-    user        = var.bastion_admin_username
-    private_key = tls_private_key.key.private_key_pem
-  }
-
-  depends_on = [null_resource.user-mapping]
-}
 
 ################################################################################
 # 9. Per-pod DNS CNAME to Application Gateway
